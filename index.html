@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>运营二分公司安全质量检查通报提取工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #version-info {
+            text-align: center;
+            color: #666;
+            font-size: 0.8rem;
+            margin-bottom: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+            background-color: #f0f7ff;
+        }
+        .file-list {
+            margin: 20px 0;
+        }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px;
+            background-color: #e9ecef;
+            margin-bottom: 5px;
+            border-radius: 4px;
+        }
+        .btn {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        .btn:hover {
+            background-color: #0069d9;
+        }
+        .btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .progress-container {
+            margin: 20px 0;
+            display: none;
+        }
+        .progress-bar {
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .progress {
+            height: 100%;
+            background-color: #007bff;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .result-container {
+            margin-top: 30px;
+            display: none;
+        }
+        .loading {
+            text-align: center;
+            margin: 20px 0;
+            display: none;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #007bff;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>运营二分公司安全质量检查通报提取工具</h1>
+        <div id="version-info">版本: 1.0</div>
+        
+        <div class="upload-area" id="uploadArea">
+            <p>点击或拖拽Excel文件到此处上传</p>
+            <p>支持同时上传多个文件</p>
+            <input type="file" id="fileInput" multiple accept=".xlsx,.xls" style="display: none;">
+        </div>
+        
+        <div class="file-list" id="fileList"></div>
+        
+        <div style="text-align: center;">
+            <button class="btn" id="processBtn" disabled>开始处理</button>
+            <button class="btn" id="clearBtn" style="background-color: #dc3545;">清空文件</button>
+        </div>
+        
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar">
+                <div class="progress" id="progressBar"></div>
+            </div>
+            <div id="progressText">正在处理：0/0</div>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>正在处理数据，请稍候...</p>
+        </div>
+        
+        <div class="result-container" id="resultContainer">
+            <h2>处理结果</h2>
+            <div style="text-align: center;">
+                <button class="btn" id="downloadBtn">下载合并表格</button>
+            </div>
+            <div id="resultTable" style="overflow-x: auto;">
+                <!-- 结果表格将在这里显示 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 引入xlsx.js库 -->
+    <script src="./xlsx.full.min.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script> -->
+    <script>
+        // 检查xlsx库是否正确加载
+        window.addEventListener('load', function() {
+            if (typeof XLSX === 'undefined') {
+                console.error('XLSX库加载失败，尝试使用CDN加载');
+                // 如果本地库加载失败，尝试从CDN加载
+                var script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+                script.onload = function() {
+                    console.log('XLSX库从CDN加载成功');
+                    // 重新初始化应用
+                    if (typeof XLSX !== 'undefined') {
+                        initApp();
+                    }
+                };
+                script.onerror = function() {
+                    alert('无法加载XLSX库，请检查网络连接或刷新页面重试');
+                };
+                document.head.appendChild(script);
+            } else {
+                console.log('XLSX库已成功加载');
+                initApp();
+            }
+        });
+
+        // 初始化应用的函数
+        function initApp() {
+            // 显示版本信息以确认代码正在运行
+            document.getElementById('version-info').textContent = '版本: 1.1 (移动兼容版)';
+            
+            // 已有的应用初始化逻辑将自动运行，我们无需在这里重复
+            console.log('应用初始化完成，XLSX库已加载');
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const fileList = document.getElementById('fileList');
+            const processBtn = document.getElementById('processBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const loading = document.getElementById('loading');
+            const resultContainer = document.getElementById('resultContainer');
+            const resultTable = document.getElementById('resultTable');
+            const downloadBtn = document.getElementById('downloadBtn');
+            
+            let uploadedFiles = [];
+            let extractedData = [];
+            
+            // 点击上传区域触发文件选择
+            uploadArea.addEventListener('click', () => {
+                fileInput.click();
+            });
+            
+            // 拖拽文件上传
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#007bff';
+                uploadArea.style.backgroundColor = '#f0f7ff';
+            });
+            
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.style.borderColor = '#ccc';
+                uploadArea.style.backgroundColor = '#f9f9f9';
+            });
+            
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#ccc';
+                uploadArea.style.backgroundColor = '#f9f9f9';
+                
+                const files = e.dataTransfer.files;
+                handleFiles(files);
+            });
+            
+            // 文件选择处理
+            fileInput.addEventListener('change', (e) => {
+                const files = e.target.files;
+                handleFiles(files);
+            });
+            
+            // 处理选择的文件
+            function handleFiles(files) {
+                const excelFiles = Array.from(files).filter(file => 
+                    file.type === 'application/vnd.ms-excel' || 
+                    file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                );
+                
+                if (excelFiles.length === 0) {
+                    alert('请选择Excel文件（.xlsx或.xls格式）');
+                    return;
+                }
+                
+                excelFiles.forEach(file => {
+                    if (!uploadedFiles.some(f => f.name === file.name && f.size === file.size)) {
+                        uploadedFiles.push(file);
+                        
+                        const fileItem = document.createElement('div');
+                        fileItem.className = 'file-item';
+                        fileItem.innerHTML = `
+                            <span>${file.name}</span>
+                            <button class="remove-btn" data-name="${file.name}" data-size="${file.size}">删除</button>
+                        `;
+                        fileList.appendChild(fileItem);
+                    }
+                });
+                
+                updateProcessButton();
+            }
+            
+            // 更新处理按钮状态
+            function updateProcessButton() {
+                processBtn.disabled = uploadedFiles.length === 0;
+            }
+            
+            // 删除文件
+            fileList.addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-btn')) {
+                    const fileName = e.target.getAttribute('data-name');
+                    const fileSize = parseInt(e.target.getAttribute('data-size'));
+                    
+                    uploadedFiles = uploadedFiles.filter(file => 
+                        !(file.name === fileName && file.size === fileSize)
+                    );
+                    
+                    e.target.parentElement.remove();
+                    updateProcessButton();
+                }
+            });
+            
+            // 清空文件列表
+            clearBtn.addEventListener('click', () => {
+                uploadedFiles = [];
+                fileList.innerHTML = '';
+                updateProcessButton();
+                resultContainer.style.display = 'none';
+            });
+            
+            // 开始处理文件
+            processBtn.addEventListener('click', async () => {
+                if (uploadedFiles.length === 0) {
+                    alert('请先上传文件');
+                    return;
+                }
+                
+                extractedData = [];
+                resultTable.innerHTML = '';
+                progressContainer.style.display = 'block';
+                loading.style.display = 'block';
+                resultContainer.style.display = 'none';
+                
+                try {
+                    progressText.textContent = `正在处理：0/${uploadedFiles.length}`;
+                    progressBar.style.width = '0%';
+                    
+                    for (let i = 0; i < uploadedFiles.length; i++) {
+                        const file = uploadedFiles[i];
+                        await processExcelFile(file);
+                        
+                        // 更新进度
+                        progressText.textContent = `正在处理：${i + 1}/${uploadedFiles.length}`;
+                        progressBar.style.width = `${((i + 1) / uploadedFiles.length) * 100}%`;
+                    }
+                    
+                    // 所有文件处理完成，显示结果
+                    displayResults();
+                    
+                } catch (error) {
+                    console.error('处理文件时出错:', error);
+                    alert('处理文件时出错: ' + error.message);
+                } finally {
+                    loading.style.display = 'none';
+                }
+            });
+            
+            // 处理Excel文件
+            function processExcelFile(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    
+                    reader.onload = function(e) {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            
+                            // 假设我们处理第一个工作表
+                            const firstSheetName = workbook.SheetNames[0];
+                            const worksheet = workbook.Sheets[firstSheetName];
+                            
+                            // 检查并处理合并单元格信息
+                            const merges = worksheet['!merges'] || [];
+                            const mergeInfo = {}; // 存储合并单元格信息
+                            
+                            // 将工作表转换为JSON对象数组
+                            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                            
+                            // 从第三行提取检查时间（如果存在）
+                            let defaultDate = '';
+                            if (rows.length >= 3 && rows[2]) {
+                                const row3Text = rows[2].join(' '); // 将第三行所有单元格内容合并为一个字符串
+                                console.log("第三行完整内容:", row3Text);
+                                
+                                // 特殊处理第三行中包含"年"的日期范围，例如"2025年3月10日-3月16日"
+                                // 优先检测带年份的日期范围
+                                let yearRangeMatched = false;
+                                
+                                // 模式1: XXXX年X月X日-X月X日
+                                const yearRangeMatch1 = row3Text.match(/(\d{4})年(\d{1,2})月\s*(\d{1,2})日\s*[-至]\s*(\d{1,2})月\s*(\d{1,2})日/);
+                                if (yearRangeMatch1) {
+                                    // 提取结束日期
+                                    const year = yearRangeMatch1[1];
+                                    const endMonth = yearRangeMatch1[4];
+                                    const endDay = yearRangeMatch1[5];
+                                    
+                                    defaultDate = `${year}.${endMonth}.${endDay}`;
+                                    console.log("从年份格式1提取结束日期:", defaultDate);
+                                    yearRangeMatched = true;
+                                } else {
+                                    // 特殊处理带括号和文字描述的日期范围，如"2025年3月10日-3月16日（票务专项检查）"
+                                    const specialRangeMatch = row3Text.match(/(\d{4})年(\d{1,2})月\s*(\d{1,2})日\s*[-至]\s*(\d{1,2})月\s*(\d{1,2})日\s*[（(][^）)]*[）)]/);
+                                    if (specialRangeMatch) {
+                                        // 提取结束日期
+                                        const year = specialRangeMatch[1];
+                                        const endMonth = specialRangeMatch[4];
+                                        const endDay = specialRangeMatch[5];
+                                        
+                                        defaultDate = `${year}.${endMonth}.${endDay}`;
+                                        console.log("从特殊范围格式提取结束日期:", defaultDate);
+                                        yearRangeMatched = true;
+                                    } else {
+                                        // 模式2: X月X日-X月X日(XXXX年)
+                                        const yearRangeMatch2 = row3Text.match(/(\d{1,2})月\s*(\d{1,2})日\s*[-至]\s*(\d{1,2})月\s*(\d{1,2})日\s*[（(]?(\d{4})年[）)]?/);
+                                        if (yearRangeMatch2) {
+                                            // 提取结束日期
+                                            const year = yearRangeMatch2[5];
+                                            const endMonth = yearRangeMatch2[3];
+                                            const endDay = yearRangeMatch2[4];
+                                            
+                                            defaultDate = `${year}.${endMonth}.${endDay}`;
+                                            console.log("从年份格式2提取结束日期:", defaultDate);
+                                            yearRangeMatched = true;
+                                        } else {
+                                            // 模式3: 匹配类似"2025年3月10日至16日"的格式
+                                            const yearRangeMatch3 = row3Text.match(/(\d{4})年(\d{1,2})月\s*(\d{1,2})日\s*[-至]\s*(\d{1,2})日/);
+                                            if (yearRangeMatch3) {
+                                                // 提取结束日期（同月不同日）
+                                                const year = yearRangeMatch3[1];
+                                                const month = yearRangeMatch3[2]; // 使用开始日期的月份
+                                                const endDay = yearRangeMatch3[4];
+                                                
+                                                defaultDate = `${year}.${month}.${endDay}`;
+                                                console.log("从年份格式3提取结束日期:", defaultDate);
+                                                yearRangeMatched = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // 如果没有匹配到带年份的日期范围，尝试提取检查时间
+                                if (!yearRangeMatched) {
+                                    let dateMatches = row3Text.match(/检查时间[：:]\s*(.*)/i);
+                                    let dateStr = '';
+                                    
+                                    if (dateMatches) {
+                                        // 从"检查时间:"后提取完整内容
+                                        dateStr = dateMatches[1];
+                                        console.log("从检查时间标签提取:", dateStr);
+                                    } else {
+                                        // 如果没有明确的"检查时间"标记，尝试直接匹配不含年份的日期格式
+                                        const directMatches = row3Text.match(/(\d{1,2})月\s*(\d{1,2})日/g);
+                                        if (directMatches && directMatches.length > 0) {
+                                            dateStr = directMatches.join(' '); // 合并所有匹配到的日期
+                                            console.log("直接匹配到日期:", dateStr);
+                                        }
+                                    }
+                                    
+                                    if (dateStr) {
+                                        console.log("检测到日期字符串:", dateStr);
+                                        
+                                        // 优先检查是否包含日期范围（包含-或至）
+                                        if (dateStr.includes('-') || dateStr.includes('至')) {
+                                            console.log("检测到日期范围");
+                                            
+                                            // 尝试匹配"X月X日-X月X日"格式的范围
+                                            const fullRangeMatch = dateStr.match(/(\d{1,2})月\s*(\d{1,2})日\s*[-至]\s*(\d{1,2})月\s*(\d{1,2})日/);
+                                            if (fullRangeMatch) {
+                                                // 直接提取结束日期（最后两个捕获组）
+                                                const year = new Date().getFullYear();
+                                                const endMonth = fullRangeMatch[3];
+                                                const endDay = fullRangeMatch[4];
+                                                
+                                                defaultDate = `${year}.${endMonth}.${endDay}`;
+                                                console.log("从完整范围提取结束日期:", defaultDate);
+                                            } else {
+                                                // 尝试匹配数字格式的日期范围："3.10-3.16"
+                                                const numericRangeMatch = dateStr.match(/(\d{1,2})[\.．・](\d{1,2})[-至](\d{1,2})[\.．・](\d{1,2})/);
+                                                if (numericRangeMatch) {
+                                                    // 提取结束日期（后两个捕获组）
+                                                    const year = new Date().getFullYear();
+                                                    const endMonth = numericRangeMatch[3];
+                                                    const endDay = numericRangeMatch[4];
+                                                    
+                                                    defaultDate = `${year}.${endMonth}.${endDay}`;
+                                                    console.log("从数字格式范围提取结束日期:", defaultDate);
+                                                } else {
+                                                    // 针对其他格式的范围提取
+                                                    const endDatePattern = /[-至](?:\s*|\D*)(\d{1,2})月\s*(\d{1,2})日/;
+                                                    const endDateMatch = dateStr.match(endDatePattern);
+                                                    
+                                                    if (endDateMatch) {
+                                                        // 成功提取到结束日期
+                                                        const year = new Date().getFullYear();
+                                                        const month = endDateMatch[1];
+                                                        const day = endDateMatch[2];
+                                                        
+                                                        defaultDate = `${year}.${month}.${day}`;
+                                                        console.log("使用结束日期作为默认日期:", defaultDate);
+                                                    } else {
+                                                        // 尝试从结束部分提取数字格式日期
+                                                        const numericEndMatch = dateStr.match(/[-至](?:\s*|\D*)(\d{1,2})[\.．・](\d{1,2})/);
+                                                        if (numericEndMatch) {
+                                                            const year = new Date().getFullYear();
+                                                            const month = numericEndMatch[1];
+                                                            const day = numericEndMatch[2];
+                                                            
+                                                            defaultDate = `${year}.${month}.${day}`;
+                                                            console.log("从数字格式提取结束日期:", defaultDate);
+                                                        } else {
+                                                            // 尝试提取开始日期（如果无法提取结束日期）
+                                                            const startDatePattern = /(\d{1,2})月\s*(\d{1,2})日(?=[-至])/;
+                                                            const startDateMatch = dateStr.match(startDatePattern);
+                                                            
+                                                            if (startDateMatch) {
+                                                                const year = new Date().getFullYear();
+                                                                defaultDate = `${year}.${startDateMatch[1]}.${startDateMatch[2]}`;
+                                                                console.log("无法提取结束日期，使用开始日期:", defaultDate);
+                                                            } else {
+                                                                // 尝试匹配数字格式的开始日期
+                                                                const numericStartMatch = dateStr.match(/(\d{1,2})[\.．・](\d{1,2})(?=[-至])/);
+                                                                if (numericStartMatch) {
+                                                                    const year = new Date().getFullYear();
+                                                                    defaultDate = `${year}.${numericStartMatch[1]}.${numericStartMatch[2]}`;
+                                                                    console.log("无法提取结束日期，使用数字格式开始日期:", defaultDate);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            // 如果没有日期范围，尝试匹配单个日期
+                                            const singleDateMatch = dateStr.match(/(\d{1,2})月\s*(\d{1,2})日/);
+                                            if (singleDateMatch) {
+                                                const year = new Date().getFullYear();
+                                                defaultDate = `${year}.${singleDateMatch[1]}.${singleDateMatch[2]}`;
+                                                console.log("设置默认日期为单个日期:", defaultDate);
+                                            } else {
+                                                // 尝试匹配数字格式的单个日期 如 "3.15"
+                                                const numericSingleMatch = dateStr.match(/(\d{1,2})[\.．・](\d{1,2})/);
+                                                if (numericSingleMatch) {
+                                                    const year = new Date().getFullYear();
+                                                    defaultDate = `${year}.${numericSingleMatch[1]}.${numericSingleMatch[2]}`;
+                                                    console.log("设置默认日期为数字格式单个日期:", defaultDate);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 查找表头行（通常在第7行左右）
+                            let headerRowIndex = -1;
+                            for (let i = 0; i < rows.length && i < 15; i++) {
+                                const row = rows[i];
+                                if (row && 
+                                    row.includes('线别') && 
+                                    row.includes('被检查单位') && 
+                                    row.includes('检查结果') && 
+                                    row.includes('处理建议')) {
+                                    headerRowIndex = i;
+                                    break;
+                                }
+                            }
+                            
+                            if (headerRowIndex === -1) {
+                                console.warn(`文件 ${file.name} 中未找到表头行`);
+                                resolve();
+                                return;
+                            }
+                            
+                            // 获取各列的索引
+                            const headers = rows[headerRowIndex];
+                            const unitIndex = headers.indexOf('被检查单位');
+                            const resultIndex = headers.indexOf('检查结果');
+                            const suggestionIndex = headers.indexOf('处理建议');
+                            
+                            // 如果找不到所需列，则跳过
+                            if (unitIndex === -1 || resultIndex === -1 || suggestionIndex === -1) {
+                                console.warn(`文件 ${file.name} 中未找到所需列`);
+                                resolve();
+                                return;
+                            }
+                            
+                            // 用于处理合并单元格
+                            let currentUnit = '';
+                            let currentDate = ''; // 初始化为空而不是默认日期
+                            let mergeCount = {}; // 记录每个单位的合并单元格行数
+                            
+                            // 处理合并单元格信息
+                            merges.forEach(merge => {
+                                // 只处理可能的被检查单位列的合并单元格
+                                if (unitIndex >= merge.s.c && unitIndex <= merge.e.c) {
+                                    const startRow = merge.s.r;
+                                    const endRow = merge.e.r;
+                                    const cellValue = rows[startRow] ? rows[startRow][unitIndex] : null;
+                                    
+                                    if (cellValue) {
+                                        // 清理单位名称
+                                        let cleanUnit = cellValue.toString().replace(/[（(][^）)]*[）)]/g, '').trim();
+                                        cleanUnit = cleanUnit.replace(/[（(]|[）)]/g, '').trim();
+                                        
+                                        // 记录该单位的合并单元格行数
+                                        const rowCount = endRow - startRow + 1;
+                                        mergeCount[cleanUnit] = (mergeCount[cleanUnit] || 0) + rowCount;
+                                        
+                                        // 标记这些行属于同一个合并单元格
+                                        for (let r = startRow; r <= endRow; r++) {
+                                            mergeInfo[r] = {
+                                                unit: cleanUnit,
+                                                rowCount: rowCount
+                                            };
+                                        }
+                                    }
+                                }
+                            });
+                            
+                            // 提取符合条件的数据（处理建议有内容的行）
+                            for (let i = headerRowIndex + 1; i < rows.length; i++) {
+                                const row = rows[i];
+                                if (!row) continue; // 跳过空行
+                                
+                                // 处理被检查单位列（可能是合并单元格）
+                                if (row[unitIndex]) {
+                                    const unitValue = row[unitIndex];
+                                    let extractedUnit = unitValue;
+                                    let extractedDate = '';
+                                    
+                                    // 处理多种日期格式
+                                    // 1. 常规括号日期格式 如：后堡（3.4）
+                                    const bracketDateMatch = unitValue.match(/[（(](\d{1,2})[\.．・](\d{1,2})[）)]/);
+                                    // 1a. 括号中的日期范围 如：后堡（3.4-3.10）
+                                    const bracketDateRangeMatch = unitValue.match(/[（(](\d{1,2})[\.．・](\d{1,2})[-至](\d{1,2})[\.．・](\d{1,2})[）)]/);
+                                    // 2. 日期后跟文字 如：3.4部门检查
+                                    const dateWithTextMatch = unitValue.match(/(\d{1,2})[\.．・](\d{1,2})(?:\s|部门|检查|日)/);
+                                    // 2a. 带范围的日期后跟文字 如：3.4-3.10部门检查
+                                    const dateRangeWithTextMatch = unitValue.match(/(\d{1,2})[\.．・](\d{1,2})[-至](\d{1,2})[\.．・](\d{1,2})(?:\s|部门|检查|日)/);
+                                    // 3. XX月XX日格式
+                                    const monthDayMatch = unitValue.match(/(\d{1,2})月\s*(\d{1,2})日/);
+                                    // 3a. XX月XX日-XX月XX日格式
+                                    const monthDayRangeMatch = unitValue.match(/(\d{1,2})月\s*(\d{1,2})日[-至](\d{1,2})月\s*(\d{1,2})日/);
+                                    // 4. 带前导零的日期 如：03.04
+                                    const zeroDateMatch = unitValue.match(/0?(\d{1,2})[\.．・]0?(\d{1,2})/);
+                                    // 4a. 带前导零的日期范围 如：03.04-03.10
+                                    const zeroDateRangeMatch = unitValue.match(/0?(\d{1,2})[\.．・]0?(\d{1,2})[-至]0?(\d{1,2})[\.．・]0?(\d{1,2})/);
+                                    
+                                    if (bracketDateRangeMatch) {
+                                        // 处理括号中的日期范围，优先使用结束日期
+                                        extractedDate = `2025.${bracketDateRangeMatch[3]}.${bracketDateRangeMatch[4]}`;
+                                        extractedUnit = unitValue.replace(/[（(].*[）)]/, '').trim();
+                                    } else if (dateRangeWithTextMatch) {
+                                        // 处理带范围的日期后跟文字，优先使用结束日期
+                                        extractedDate = `2025.${dateRangeWithTextMatch[3]}.${dateRangeWithTextMatch[4]}`;
+                                        const datePattern = new RegExp(`${dateRangeWithTextMatch[1]}[\.．・]${dateRangeWithTextMatch[2]}[-至]${dateRangeWithTextMatch[3]}[\.．・]${dateRangeWithTextMatch[4]}[^\\d]*`);
+                                        extractedUnit = unitValue.replace(datePattern, '').trim();
+                                    } else if (monthDayRangeMatch) {
+                                        // 处理月日范围格式，优先使用结束日期
+                                        extractedDate = `2025.${monthDayRangeMatch[3]}.${monthDayRangeMatch[4]}`;
+                                        const datePattern = new RegExp(`${monthDayRangeMatch[1]}月\\s*${monthDayRangeMatch[2]}日[-至]${monthDayRangeMatch[3]}月\\s*${monthDayRangeMatch[4]}日`);
+                                        extractedUnit = unitValue.replace(datePattern, '').trim();
+                                    } else if (zeroDateRangeMatch) {
+                                        // 处理带前导零的日期范围，优先使用结束日期
+                                        extractedDate = `2025.${zeroDateRangeMatch[3]}.${zeroDateRangeMatch[4]}`;
+                                        const datePattern = new RegExp(`0?${zeroDateRangeMatch[1]}[\.．・]0?${zeroDateRangeMatch[2]}[-至]0?${zeroDateRangeMatch[3]}[\.．・]0?${zeroDateRangeMatch[4]}`);
+                                        extractedUnit = unitValue.replace(datePattern, '').trim();
+                                    } else if (bracketDateMatch) {
+                                        // 处理括号中的日期
+                                        extractedDate = `2025.${bracketDateMatch[1]}.${bracketDateMatch[2]}`;
+                                        extractedUnit = unitValue.replace(/[（(].*[）)]/, '').trim();
+                                    } else if (monthDayMatch) {
+                                        // 处理"X月X日"格式
+                                        extractedDate = `2025.${monthDayMatch[1]}.${monthDayMatch[2]}`;
+                                        extractedUnit = unitValue.replace(/\d{1,2}月\d{1,2}日/, '').trim();
+                                    } else if (dateWithTextMatch) {
+                                        // 处理日期后跟文字的情况
+                                        extractedDate = `2025.${dateWithTextMatch[1]}.${dateWithTextMatch[2]}`;
+                                        const datePattern = new RegExp(`${dateWithTextMatch[1]}[\.．・]${dateWithTextMatch[2]}[^\\d]*`);
+                                        extractedUnit = unitValue.replace(datePattern, '').trim();
+                                    } else if (zeroDateMatch) {
+                                        // 处理普通日期格式（可能带前导零）
+                                        extractedDate = `2025.${zeroDateMatch[1]}.${zeroDateMatch[2]}`;
+                                        const datePattern = new RegExp(`0?${zeroDateMatch[1]}[\.．・]0?${zeroDateMatch[2]}`);
+                                        extractedUnit = unitValue.replace(datePattern, '').trim();
+                                    }
+                                    
+                                    // 清理被检查单位名称中的括号等非文字字符
+                                    extractedUnit = extractedUnit.replace(/[（(][^）)]*[）)]/g, '').trim();
+                                    // 额外处理可能存在的漏网括号
+                                    extractedUnit = extractedUnit.replace(/[（(]|[）)]/g, '').trim();
+                                    
+                                    // 更新当前单位和日期
+                                    if (extractedDate) {
+                                        // 始终优先使用从被检查单位提取的日期
+                                        currentDate = extractedDate;
+                                        console.log("优先使用被检查单位日期:", currentDate);
+                                        currentUnit = extractedUnit;
+                                    } else {
+                                        currentUnit = extractedUnit;
+                                    }
+                                } else if (mergeInfo[i]) {
+                                    // 如果当前行是合并单元格的一部分，使用合并单元格的单位信息
+                                    currentUnit = mergeInfo[i].unit;
+                                }
+                                
+                                // 只提取处理建议有内容的行
+                                if (row[suggestionIndex]) {
+                                    // 记录合并单元格信息
+                                    const unitMergeCount = mergeInfo[i] ? mergeInfo[i].rowCount : 1;
+                                    
+                                    extractedData.push({
+                                        unit: currentUnit || '未知单位',
+                                        date: currentDate || defaultDate || '无日期',
+                                        result: row[resultIndex] || '无检查结果',
+                                        suggestion: row[suggestionIndex] || '无处理建议',
+                                        mergeCount: unitMergeCount // 记录该单位的合并单元格行数
+                                    });
+                                }
+                            }
+                            
+                            resolve();
+                        } catch (error) {
+                            console.error(`处理文件 ${file.name} 时出错:`, error);
+                            reject(error);
+                        }
+                    };
+                    
+                    reader.onerror = function() {
+                        reject(new Error(`读取文件 ${file.name} 时出错`));
+                    };
+                    
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+            
+            // 显示处理结果
+            function displayResults() {
+                if (extractedData.length === 0) {
+                    resultTable.innerHTML = '<p>未找到符合条件的数据</p>';
+                    resultContainer.style.display = 'block';
+                    return;
+                }
+                
+                // 从提取的数据中获取默认日期（使用第三行提取的日期）
+                let defaultDate = '';
+                for (let i = 0; i < extractedData.length; i++) {
+                    if (extractedData[i].date && extractedData[i].date !== '无日期') {
+                        defaultDate = extractedData[i].date;
+                        break;
+                    }
+                }
+                
+                // 对提取的数据进行排序
+                const ticketData = []; // 存储含"票务专项检查"字样的数据
+                const normalData = []; // 存储普通数据
+                
+                extractedData.forEach(item => {
+                    // 检查是否包含"票务专项检查"字样
+                    if (item.unit.includes('票务专项检查') || 
+                        item.result.includes('票务专项检查') || 
+                        item.suggestion.includes('票务专项检查')) {
+                        // 不强制修改票务专项检查的日期，保留其原始日期
+                        ticketData.push({...item});
+                    } else {
+                        normalData.push(item);
+                    }
+                });
+                
+                // 按日期排序普通数据
+                normalData.sort((a, b) => {
+                    // 如果没有日期则排在最后
+                    if (!a.date) return 1;
+                    if (!b.date) return -1;
+                    
+                    // 将日期字符串转换为Date对象进行比较
+                    const dateA = new Date(a.date.replace(/\./g, '/'));
+                    const dateB = new Date(b.date.replace(/\./g, '/'));
+                    
+                    return dateA - dateB; // 升序排序
+                });
+                
+                // 按日期排序票务专项检查数据
+                ticketData.sort((a, b) => {
+                    if (!a.date) return 1;
+                    if (!b.date) return -1;
+                    
+                    const dateA = new Date(a.date.replace(/\./g, '/'));
+                    const dateB = new Date(b.date.replace(/\./g, '/'));
+                    
+                    return dateA - dateB;
+                });
+                
+                // 合并排序后的数据（普通数据在前，票务专项检查在后）
+                const sortedData = [...normalData, ...ticketData];
+                
+                // 1. 统计每个被检查单位查出的问题数（每行数据算一个问题）
+                const unitProblemCount = {};
+                sortedData.forEach(item => {
+                    if (item.unit) {
+                        unitProblemCount[item.unit] = (unitProblemCount[item.unit] || 0) + 1;
+                    }
+                });
+                
+                // 2. 统计周期检查站次（合并单元格算一次，未合并的每条记录算一次）
+                const unitStationCount = {};
+                const processedMerges = new Set(); // 用于跟踪已处理的合并单元格
+                
+                sortedData.forEach(item => {
+                    if (item.unit) {
+                        // 检查是否有合并单元格信息
+                        if (item.mergeCount && item.mergeCount > 1) {
+                            // 生成唯一标识符，用于识别同一合并单元格（单位+日期+合并标识）
+                            const mergeKey = `${item.unit}_${item.date}_${item.mergeCount}`;
+                            
+                            // 如果这个合并单元格之前还没有处理过，计数加1
+                            if (!processedMerges.has(mergeKey)) {
+                                processedMerges.add(mergeKey);
+                                unitStationCount[item.unit] = (unitStationCount[item.unit] || 0) + 1;
+                            }
+                        } else {
+                            // 没有合并单元格，每条记录算一次
+                            unitStationCount[item.unit] = (unitStationCount[item.unit] || 0) + 1;
+                        }
+                    }
+                });
+                
+                // 3. 统计处理建议为"纳入考核"的次数
+                const unitKaoheCount = {};
+                sortedData.forEach(item => {
+                    if (item.unit && item.suggestion && item.suggestion.includes('纳入考核')) {
+                        unitKaoheCount[item.unit] = (unitKaoheCount[item.unit] || 0) + 1;
+                    }
+                });
+                
+                // 生成统计HTML
+                let statsHTML = `
+                    <div class="stats-container" style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #e9ecef;">
+                        <h3 style="margin-top: 0; color: #495057;">被检查单位统计</h3>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr>
+                                    <th style="border: 1px solid #dee2e6; padding: 8px; background-color: #e9ecef; text-align: center;">被检查单位</th>
+                                    <th style="border: 1px solid #dee2e6; padding: 8px; background-color: #e9ecef; text-align: center;">问题数</th>
+                                    <th style="border: 1px solid #dee2e6; padding: 8px; background-color: #e9ecef; text-align: center;">纳入考核次数</th>
+                                    <th style="border: 1px solid #dee2e6; padding: 8px; background-color: #e9ecef; text-align: center;">检查站次</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                // 按问题数降序排序
+                const sortedUnits = Object.keys(unitProblemCount).sort((a, b) => unitProblemCount[b] - unitProblemCount[a]);
+                
+                sortedUnits.forEach(unit => {
+                    statsHTML += `
+                        <tr>
+                            <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${unit}</td>
+                            <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${unitProblemCount[unit]}</td>
+                            <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center; color: ${unitKaoheCount[unit] ? 'red' : 'inherit'}; font-weight: ${unitKaoheCount[unit] ? 'bold' : 'normal'};">${unitKaoheCount[unit] || 0}</td>
+                            <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${unitStationCount[unit] || 0}</td>
+                        </tr>
+                    `;
+                });
+                
+                // 计算总计
+                const totalProblems = sortedData.length;
+                const totalKaohe = Object.values(unitKaoheCount).reduce((sum, count) => sum + count, 0);
+                const totalStations = Object.values(unitStationCount).reduce((sum, count) => sum + count, 0);
+                
+                statsHTML += `
+                            </tbody>
+                        </table>
+                        <p style="margin-top: 10px; color: #6c757d; text-align: right;">被检查单位总数: ${sortedUnits.length} | 问题总数: ${totalProblems} | 纳入考核总数: <span style="color: red; font-weight: bold;">${totalKaohe}</span> | 检查站次总数: ${totalStations}</p>
+                    </div>
+                `;
+                
+                // 创建数据表格HTML
+                let tableHTML = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>序号</th>
+                                <th>被检查单位</th>
+                                <th>检查日期</th>
+                                <th>检查结果</th>
+                                <th>处理建议</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                sortedData.forEach((item, index) => {
+                    // 检查处理建议中是否包含"纳入考核"字样
+                    const isKaohe = item.suggestion && item.suggestion.includes('纳入考核');
+                    const suggestionStyle = isKaohe ? 'color: red; font-weight: bold;' : '';
+                    
+                    // 确保所有字段都有值
+                    const unit = item.unit || '未知单位';
+                    const date = item.date || '无日期';
+                    const result = item.result || '无检查结果';
+                    const suggestion = item.suggestion || '无处理建议';
+                    
+                    tableHTML += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${unit}</td>
+                            <td>${date}</td>
+                            <td>${result}</td>
+                            <td style="${suggestionStyle}">${suggestion}</td>
+                        </tr>
+                    `;
+                });
+                
+                tableHTML += `
+                        </tbody>
+                    </table>
+                `;
+                
+                // 组合统计和表格
+                resultTable.innerHTML = statsHTML + tableHTML;
+                resultContainer.style.display = 'block';
+                
+                // 更新extractedData为排序后的数据，以便下载时使用
+                extractedData = sortedData;
+            }
+            
+            // 下载合并表格
+            downloadBtn.addEventListener('click', () => {
+                if (extractedData.length === 0) {
+                    alert('没有可下载的数据');
+                    return;
+                }
+                
+                // 1. 统计每个被检查单位查出的问题数
+                const unitProblemCount = {};
+                extractedData.forEach(item => {
+                    if (item.unit) {
+                        unitProblemCount[item.unit] = (unitProblemCount[item.unit] || 0) + 1;
+                    }
+                });
+                
+                // 2. 统计周期检查站次（合并单元格算一次，未合并的每条记录算一次）
+                const unitStationCount = {};
+                const processedMerges = new Set(); // 用于跟踪已处理的合并单元格
+                
+                extractedData.forEach(item => {
+                    if (item.unit) {
+                        // 检查是否有合并单元格信息
+                        if (item.mergeCount && item.mergeCount > 1) {
+                            // 生成唯一标识符，用于识别同一合并单元格
+                            const mergeKey = `${item.unit}_${item.date}_${item.mergeCount}`;
+                            
+                            // 如果这个合并单元格之前还没有处理过，计数加1
+                            if (!processedMerges.has(mergeKey)) {
+                                processedMerges.add(mergeKey);
+                                unitStationCount[item.unit] = (unitStationCount[item.unit] || 0) + 1;
+                            }
+                        } else {
+                            // 没有合并单元格，每条记录算一次
+                            unitStationCount[item.unit] = (unitStationCount[item.unit] || 0) + 1;
+                        }
+                    }
+                });
+                
+                // 3. 统计处理建议为"纳入考核"的次数
+                const unitKaoheCount = {};
+                extractedData.forEach(item => {
+                    if (item.unit && item.suggestion && item.suggestion.includes('纳入考核')) {
+                        unitKaoheCount[item.unit] = (unitKaoheCount[item.unit] || 0) + 1;
+                    }
+                });
+                
+                // 创建两个工作表：一个用于统计，一个用于详细数据
+                
+                // 1. 创建统计工作表
+                const statsData = Object.keys(unitProblemCount).map(unit => ({
+                    '被检查单位': unit,
+                    '问题数': unitProblemCount[unit],
+                    '纳入考核次数': unitKaoheCount[unit] || 0,
+                    '检查站次': unitStationCount[unit] || 0
+                }));
+                // 按问题数降序排序
+                statsData.sort((a, b) => b['问题数'] - a['问题数']);
+                
+                // 计算总计
+                const totalProblems = extractedData.length;
+                const totalKaohe = Object.values(unitKaoheCount).reduce((sum, count) => sum + count, 0);
+                const totalStations = Object.values(unitStationCount).reduce((sum, count) => sum + count, 0);
+                
+                // 添加总计行
+                statsData.push({
+                    '被检查单位': '总计',
+                    '问题数': totalProblems,
+                    '纳入考核次数': totalKaohe,
+                    '检查站次': totalStations
+                });
+                
+                const statsWs = XLSX.utils.json_to_sheet(statsData);
+                
+                // 设置统计表格的列宽
+                statsWs['!cols'] = [
+                    { wch: 20 },  // 被检查单位列宽
+                    { wch: 10 },  // 问题数列宽
+                    { wch: 15 },  // 纳入考核次数列宽
+                    { wch: 10 }   // 检查站次列宽
+                ];
+                
+                // 2. 创建详细数据工作表
+                const dataWs = XLSX.utils.json_to_sheet(
+                    extractedData.map((item, index) => ({
+                        '序号': index + 1,
+                        '被检查单位': item.unit || '未知单位',
+                        '检查日期': item.date || '无日期',
+                        '检查结果': item.result || '无检查结果',
+                        '处理建议': item.suggestion || '无处理建议'
+                    }))
+                );
+                
+                // 设置详细数据表格的列宽
+                dataWs['!cols'] = [
+                    { wch: 8 },    // 序号列宽
+                    { wch: 15 },   // 被检查单位列宽
+                    { wch: 12 },   // 检查日期列宽
+                    { wch: 35 },   // 检查结果列宽
+                    { wch: 35 }    // 处理建议列宽
+                ];
+                
+                // 设置行高
+                dataWs['!rows'] = [];
+                for (let i = 0; i <= extractedData.length; i++) {
+                    dataWs['!rows'].push({ hpt: 24 }); // 设置适当的行高
+                }
+                
+                // 添加表格样式
+                const styles = {
+                    headerStyle: {
+                        font: { bold: true, color: { rgb: "000000" } },
+                        fill: { fgColor: { rgb: "F2F2F2" } },
+                        alignment: { horizontal: 'center', vertical: 'center' },
+                        border: {
+                            top: { style: 'thin' },
+                            bottom: { style: 'thin' },
+                            left: { style: 'thin' },
+                            right: { style: 'thin' }
+                        }
+                    },
+                    cellStyle: {
+                        border: {
+                            top: { style: 'thin' },
+                            bottom: { style: 'thin' },
+                            left: { style: 'thin' },
+                            right: { style: 'thin' }
+                        }
+                    },
+                    centerAlignStyle: {
+                        alignment: { horizontal: 'center', vertical: 'center' },
+                        border: {
+                            top: { style: 'thin' },
+                            bottom: { style: 'thin' },
+                            left: { style: 'thin' },
+                            right: { style: 'thin' }
+                        }
+                    }
+                };
+                
+                // 应用样式到详细数据表格
+                const range = XLSX.utils.decode_range(dataWs['!ref']);
+                
+                // 设置表头样式
+                for (let C = 0; C <= range.e.c; C++) {
+                    const headerCell = XLSX.utils.encode_cell({ r: 0, c: C });
+                    if (!dataWs[headerCell]) continue;
+                    if (!dataWs[headerCell].s) dataWs[headerCell].s = {};
+                    Object.assign(dataWs[headerCell].s, styles.headerStyle);
+                }
+                
+                // 设置数据单元格样式
+                for (let R = 1; R <= range.e.r; R++) {
+                    for (let C = 0; C <= range.e.c; C++) {
+                        const cell = XLSX.utils.encode_cell({ r: R, c: C });
+                        if (!dataWs[cell]) continue;
+                        if (!dataWs[cell].s) dataWs[cell].s = {};
+                        
+                        // 前三列居中对齐
+                        if (C <= 2) {
+                            Object.assign(dataWs[cell].s, styles.centerAlignStyle);
+                            // 添加自动换行
+                            dataWs[cell].s.alignment.wrapText = true;
+                        } else {
+                            // 检查结果和处理建议列保持左对齐
+                            Object.assign(dataWs[cell].s, styles.cellStyle);
+                            dataWs[cell].s.alignment = { vertical: 'center', wrapText: true };
+                            
+                            // 检查结果列(C=3)，检查是否包含"纳入考核"字样，如果包含则设置为红色
+                            if (C === 3) {
+                                // 不需要标红
+                            }
+                            // 处理建议列(C=4)，检查是否包含"纳入考核"字样，如果包含则设置为红色
+                            else if (C === 4) {
+                                const rowData = extractedData[R-1]; // 因为R从1开始，而数组索引从0开始
+                                if (rowData && rowData.suggestion && rowData.suggestion.includes('纳入考核')) {
+                                    if (!dataWs[cell].s.font) dataWs[cell].s.font = {};
+                                    dataWs[cell].s.font.color = { rgb: "FF0000" }; // 红色
+                                    dataWs[cell].s.font.bold = true; // 加粗
+                                }
+                            }
+                        }
+                        
+                        // 设置隔行背景色
+                        if (R % 2 === 0) {
+                            if (!dataWs[cell].s.fill) dataWs[cell].s.fill = {};
+                            dataWs[cell].s.fill.fgColor = { rgb: "F9F9F9" };
+                        }
+                    }
+                }
+                
+                // 应用样式到统计表格
+                const statsRange = XLSX.utils.decode_range(statsWs['!ref']);
+                
+                // 设置统计表格表头样式
+                for (let C = 0; C <= statsRange.e.c; C++) {
+                    const headerCell = XLSX.utils.encode_cell({ r: 0, c: C });
+                    if (!statsWs[headerCell]) continue;
+                    if (!statsWs[headerCell].s) statsWs[headerCell].s = {};
+                    Object.assign(statsWs[headerCell].s, styles.headerStyle);
+                }
+                
+                // 设置统计表格数据单元格样式
+                for (let R = 1; R <= statsRange.e.r; R++) {
+                    for (let C = 0; C <= statsRange.e.c; C++) {
+                        const cell = XLSX.utils.encode_cell({ r: R, c: C });
+                        if (!statsWs[cell]) continue;
+                        if (!statsWs[cell].s) statsWs[cell].s = {};
+                        
+                        // 统计表格中所有单元格居中对齐
+                        Object.assign(statsWs[cell].s, styles.centerAlignStyle);
+                        
+                        // 纳入考核次数列(C=2)，如果有值则标红
+                        if (C === 2 && R < statsRange.e.r && statsWs[cell].v > 0) {
+                            if (!statsWs[cell].s.font) statsWs[cell].s.font = {};
+                            statsWs[cell].s.font.color = { rgb: "FF0000" }; // 红色
+                            statsWs[cell].s.font.bold = true; // 加粗
+                        }
+                        
+                        // 设置总计行样式
+                        if (R === statsRange.e.r) {
+                            if (!statsWs[cell].s.font) statsWs[cell].s.font = {};
+                            statsWs[cell].s.font.bold = true;
+                            if (!statsWs[cell].s.fill) statsWs[cell].s.fill = {};
+                            statsWs[cell].s.fill.fgColor = { rgb: "E6F3FF" };
+                            
+                            // 总计行的纳入考核次数也设为红色
+                            if (C === 2) {
+                                statsWs[cell].s.font.color = { rgb: "FF0000" }; // 红色
+                            }
+                        }
+                        // 设置隔行背景色
+                        else if (R % 2 === 0) {
+                            if (!statsWs[cell].s.fill) statsWs[cell].s.fill = {};
+                            statsWs[cell].s.fill.fgColor = { rgb: "F9F9F9" };
+                        }
+                    }
+                }
+                
+                // 创建工作簿并添加两个工作表
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, statsWs, '检查站次统计');
+                XLSX.utils.book_append_sheet(wb, dataWs, '详细数据');
+                
+                // 生成文件并下载
+                XLSX.writeFile(wb, '合并表格数据.xlsx', { cellStyles: true, bookType: 'xlsx' });
+            });
+        });
+    </script>
+</body>
+</html> 
